@@ -31,8 +31,16 @@
 #if defined(__arm__)
 // 32-bit ARM has load/store alignment restrictions for longs.
 #define LONG_ALIGNMENT_MASK 0x3
+#if defined(__ARM_ARCH_4__) || defined(__ARM_ARCH_4T__) || \
+    defined(__ARM_ARCH_5__) || defined(__ARM_ARCH_5T__) || \
+    defined(__ARM_ARCH_5TE__) || defined(__ARM_ARCH_5TEJ__)
+// ARMv5 cannot perform the unaligned halfword/word accesses accepted by ARMv7.
+#define INT_ALIGNMENT_MASK 0x3
+#define SHORT_ALIGNMENT_MASK 0x1
+#else
 #define INT_ALIGNMENT_MASK 0x0
 #define SHORT_ALIGNMENT_MASK 0x0
+#endif
 #elif defined(__mips__)
 // MIPS has load/store alignment restrictions for longs, ints and shorts.
 #define LONG_ALIGNMENT_MASK 0x7
@@ -260,7 +268,8 @@ static void Memory_pokeShortArray(JNIEnv* env, jclass, jint dstAddress, jshortAr
 }
 
 static jshort Memory_peekShort(JNIEnv*, jclass, jint srcAddress, jboolean swap) {
-    jshort result = *cast<const jshort*>(srcAddress);
+    const jshort* src = cast<const jshort*>(srcAddress);
+    jshort result = (srcAddress & SHORT_ALIGNMENT_MASK) == 0 ? *src : get_unaligned<jshort>(src);
     if (swap) {
         result = bswap_16(result);
     }
@@ -271,11 +280,17 @@ static void Memory_pokeShort(JNIEnv*, jclass, jint dstAddress, jshort value, jbo
     if (swap) {
         value = bswap_16(value);
     }
-    *cast<jshort*>(dstAddress) = value;
+    jshort* dst = cast<jshort*>(dstAddress);
+    if ((dstAddress & SHORT_ALIGNMENT_MASK) == 0) {
+        *dst = value;
+    } else {
+        put_unaligned<jshort>(dst, value);
+    }
 }
 
 static jint Memory_peekInt(JNIEnv*, jclass, jint srcAddress, jboolean swap) {
-    jint result = *cast<const jint*>(srcAddress);
+    const jint* src = cast<const jint*>(srcAddress);
+    jint result = (srcAddress & INT_ALIGNMENT_MASK) == 0 ? *src : get_unaligned<jint>(src);
     if (swap) {
         result = bswap_32(result);
     }
@@ -286,7 +301,12 @@ static void Memory_pokeInt(JNIEnv*, jclass, jint dstAddress, jint value, jboolea
     if (swap) {
         value = bswap_32(value);
     }
-    *cast<jint*>(dstAddress) = value;
+    jint* dst = cast<jint*>(dstAddress);
+    if ((dstAddress & INT_ALIGNMENT_MASK) == 0) {
+        *dst = value;
+    } else {
+        put_unaligned<jint>(dst, value);
+    }
 }
 
 static jlong Memory_peekLong(JNIEnv*, jclass, jint srcAddress, jboolean swap) {
